@@ -5,7 +5,7 @@ if (len(sys.argv) < 2):
     print "Server usage: python server.py PORT"
     sys.exit(0)
 
-MIN_THREADS = 4 # Minimum number of workers at start and at any point
+MIN_THREADS = 5 # Minimum number of workers at start and at any point
 MAX_THREADS = 32 # Maximum number of workers
 TOLERANCE = 4 # Minimum difference before resizing the pool, to prevent constant resizing (inertia)
 
@@ -99,8 +99,8 @@ class Server(Thread):
 
     def run(self):
         while True:
-            # At most 4 queued clients
-            self.server.listen(4)
+            # At most 5 queued clients
+            self.server.listen(5)
             (conn, (ip,port)) = self.server.accept()
             # If the server is already overloaded, reject this client
             if len(self.pool.clients) > MAX_THREADS:
