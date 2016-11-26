@@ -204,10 +204,11 @@ class Worker(Thread):
                     if clientId in room.messages[index][2]:
                         room.messages[index][2].remove(clientId)
                 room.messages[:] = [m for m in room.messages if m[2]]
-                room.clients.remove(clientId)
                 if (len(room.clients) > 0):
                     leaveMessage = "{0} has left the chatroom".format(clientName)
                     room.messages.append([clientName, leaveMessage, set(room.clients)])
+                self.readMessages(False)
+                room.clients.remove(clientId)
                 self.pool.lockState.release()
                 self.myRooms.remove((roomRef, clientId))
 
@@ -250,8 +251,9 @@ class Worker(Thread):
             self.myRooms = []
             return True
 
-    def readMessages(self):
-        self.pool.lockState.acquire()
+    def readMessages(self, lockNeeded):
+        if lockNeeded:
+            self.pool.lockState.acquire()
         for t in self.myRooms:
             roomRef = t[0]
             clientId = t[1]
@@ -261,7 +263,8 @@ class Worker(Thread):
                         room.messages[index][2].remove(clientId)
                         self.sendClient(self.constructMessage(roomRef, room.messages[index][0], room.messages[index][1]))
             room.messages[:] = [m for m in room.messages if m[2]]
-        self.pool.lockState.release()
+        if lockNeeded:
+            self.pool.lockState.release()
 
     def run(self):
         while not (self.pool.killRequested or self.useless):
@@ -279,7 +282,7 @@ class Worker(Thread):
 
             # Serve client
             while not (self.pool.killRequested or self.useless):
-                self.readMessages()
+                self.readMessages(True)
                 try:
                     data = self.conn.recv(2048).replace("\\n", '\n')
                     print "Thread {0} received data {1}".format(self.id, data.rstrip())
