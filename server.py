@@ -121,6 +121,7 @@ class Worker(Thread):
 
     def constructReply(self, data):
         reply = "HELO {0}\nIP:{1}\nPort:{2}\nStudentID:{3}\n".format(data, socket.gethostbyname(socket.gethostname()), PORT, 16336617)
+        return reply
 
     def constructJoinReply(self, roomName, roomRef, clientId):
         reply = ("JOINED_CHATROOM: {0}\n"
