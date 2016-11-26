@@ -244,9 +244,10 @@ class Worker(Thread):
                         room.messages[index][2].remove(clientId)
                 room.messages[:] = [m for m in room.messages if m[2]]
                 room.clients.remove(clientId)
+                discMessage = "{0} was disconnected".format(clientName)
                 if (len(room.clients) > 0):
-                    discMessage = "{0} was disconnected".format(clientName)
                     room.messages.append([clientName, discMessage, set(room.clients)])
+                self.sendClient(self.constructMessage(roomRef, clientName, discMessage))
                 self.pool.lockState.release()
 
             self.myRooms = []
