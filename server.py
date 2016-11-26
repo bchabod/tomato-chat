@@ -171,8 +171,7 @@ class Worker(Thread):
 
             # Get client ID, room ref, broadcast and append client to users
             self.pool.lockState.acquire()
-            clientId = self.pool.state.idCounter
-            self.pool.state.idCounter += 1
+            clientId = self.associatedId
             if roomName in self.pool.state.roomRefs:
                 roomRef = self.pool.state.roomRefs[roomName]
             else:
@@ -279,6 +278,11 @@ class Worker(Thread):
                 continue
 
             print "Thread {0} fetched a client".format(self.id)
+
+            self.pool.lockState.acquire()
+            self.associatedId = self.pool.state.idCounter
+            self.pool.state.idCounter += 1
+            self.pool.lockState.release()
 
             # Serve client
             while not (self.pool.killRequested or self.useless):
