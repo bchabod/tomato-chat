@@ -2,20 +2,46 @@ import socket, time, threading, sys, signal, errno
 from threading import Thread
 
 if (len(sys.argv) < 2):
-	print "Server usage: python server.py PORT"
-	sys.exit(0)
+    print "Server usage: python server.py PORT"
+    sys.exit(0)
 
 MIN_THREADS = 4 # Minimum number of workers at start and at any point
 MAX_THREADS = 32 # Maximum number of workers
 TOLERANCE = 4 # Minimum difference before resizing the pool, to prevent constant resizing (inertia)
 
+J_MSG = "JOIN_CHATROOM: "
+L_MSG = "LEAVE_CHATROOM: "
+IP_MSG = "CLIENT_IP: "
+P_MSG = "PORT: "
+JID_MSG = "JOIN_ID: "
+NAME_MSG = "CLIENT_NAME: "
+DIS_MSG = "DISCONNECT: "
+CHAT_MSG = "CHAT: "
+MSG = "MESSAGE: "
+
 PORT = int(sys.argv[1])
+
+class Room():
+    def __init__(self, ref):
+        self.ref = ref
+        # This will contain [CLIENT_NAME, MESSAGE, set(ID)]
+        self.messages = []
+        self.clients = []
+
+class ChatState():
+    def __init__(self):
+        self.idCounter = 0
+        self.refCounter = 0
+        # Associating a name with a Room object
+        self.rooms = {}
 
 class Pool():
     def __init__(self):
         self.lockClients = threading.Lock()
+        self.lockState = threading.Lock()
         self.clients = []
         self.workers = []
+        self.state = ChatState()
         self.threadCounter = 0
         self.killRequested = False
         for counter in range(MIN_THREADS):
@@ -95,6 +121,47 @@ class Worker(Thread):
         reply = "HELO {0}\nIP:{1}\nPort:{2}\nStudentID:{3}\n".format(data, socket.gethostbyname(socket.gethostname()), PORT, 16336617)
         return reply
 
+    def handleResponse(self, data):
+        # Thread pool protocol
+        if data == "KILL_SERVICE\n":
+            self.pool.kill()
+        elif data.startswith("HELO "):
+            while not (self.pool.killRequested or self.useless):
+                try:
+                    self.conn.send(self.constructReply(data[5:].rstrip()))
+                    break
+                except socket.error as e:
+                    if e.errno == errno.ECONNRESET:
+                        break
+
+        # Chat protocol
+        elif data.startswith(J_MSG):
+            roomName = data.splitlines()[0][len(J_MSG):]
+            clientName = data.splitlines()[3][len(NAME_MSG):]
+            self.pool.lockState.acquire()
+
+            # Get a new client ID
+            clientID = self.pool.state.idCounter
+            self.pool.state.idCounter += 1
+
+            # Get room reference, create room if necessary
+            if roomName in self.pool.state.rooms:
+                roomRef = self.pool.state.rooms[roomName].ref
+            else:
+                roomRef = self.pool.state.refCounter
+                self.pool.state.rooms[roomName] = Room(roomRef)
+                self.pool.state.refCounter += 1
+            room = self.pool.state.rooms[roomName]
+
+            # Broadcast a join message
+            if (len(room.clients) > 0):
+                joinMessage = "{0} has joined the chatroom".format(clientName)
+                room.messages.append([clientName, joinMessage, set(room.clients)])
+
+            # Associate this client with this room
+            self.pool.state.rooms[roomName].clients.append(clientID)
+            self.pool.lockState.release()
+
     def run(self):
         while not (self.pool.killRequested or self.useless):
             # Try to get a client
@@ -114,18 +181,9 @@ class Worker(Thread):
                 try:
                     data = self.conn.recv(2048)
                     print "Thread {0} received data {1}".format(self.id, data.rstrip())
-                    if data == "KILL_SERVICE\n":
-                        self.pool.kill()
-                    elif data.startswith("HELO "):
-                        while not (self.pool.killRequested or self.useless):
-                            try:
-                                self.conn.send(self.constructReply(data[5:].rstrip()))
-                                break
-                            except socket.error as e:
-                                if e.errno == errno.ECONNRESET:
-                                    break
-                    elif data == "":
+                    if data == "":
                         break
+                    self.handleResponse(data)
                 except socket.error as e2:
                     if e2.errno == errno.ECONNRESET:
                         break
