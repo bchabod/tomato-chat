@@ -149,6 +149,7 @@ class Worker(Thread):
         while not (self.pool.killRequested or self.useless):
             try:
                 self.conn.send(content)
+                print "Thread {0} sent this to client: {1}".format(self.id, content)
                 break
             except socket.error as e:
                 if e.errno == errno.ECONNRESET:
