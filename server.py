@@ -181,10 +181,10 @@ class Worker(Thread):
                 self.pool.state.rooms[roomRef] = Room()
                 self.pool.state.refCounter += 1
             room = self.pool.state.rooms[roomRef]
+            room.clients.append(clientId)
             if (len(room.clients) > 0):
                 joinMessage = "{0} has joined the chatroom".format(clientName)
                 room.messages.append([clientName, joinMessage, set(room.clients)])
-            room.clients.append(clientId)
             self.pool.lockState.release()
 
             self.myRooms.append((roomRef, clientId))
