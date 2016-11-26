@@ -141,7 +141,7 @@ class Worker(Thread):
     def constructMessage(self, roomRef, clientName, message):
         reply = ("CHAT: {0}\n"
                 "CLIENT_NAME: {1}\n"
-                "MESSAGE: {2}\n"
+                "MESSAGE: {2}\n\n"
                ).format(roomRef, clientName, message)
         return reply
 
