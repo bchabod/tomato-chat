@@ -157,8 +157,10 @@ class Worker(Thread):
         # Thread pool protocol
         if data == "KILL_SERVICE\n":
             self.pool.kill()
+            return True
         elif data.startswith("HELO "):
             self.sendClient(self.constructReply(data[5:].rstrip()))
+            return False
 
         # Chat protocol
         elif data.startswith(J_MSG):
@@ -185,6 +187,7 @@ class Worker(Thread):
 
             self.myRooms.append((roomRef, clientId))
             self.sendClient(self.constructJoinReply(roomName, roomRef, clientId))
+            return False
 
         elif data.startswith(L_MSG):
             roomRef = int(data.splitlines()[0][len(L_MSG):])
@@ -207,6 +210,7 @@ class Worker(Thread):
                 self.myRooms.remove((roomRef, clientId))
 
             self.sendClient(self.constructLeaveReply(roomRef, clientId))
+            return False
 
         elif data.startswith(CHAT_MSG):
             roomRef = int(data.splitlines()[0][len(CHAT_MSG):])
@@ -220,6 +224,29 @@ class Worker(Thread):
             if (len(room.clients) > 0):
                 room.messages.append([clientName, message, set(room.clients)])
             self.pool.lockState.release()
+            return False
+
+        elif data.startswith(DIS_MSG):
+            clientName = data.splitlines()[2][len(NAME_MSG):]
+
+            # Discard any messages left for us, and leave all chatrooms
+            for t in self.myRooms:
+                roomRef = t[0]
+                clientId = t[1]
+                self.pool.lockState.acquire()
+                room = self.pool.state.rooms[roomRef]
+                for index in range(len(room.messages)):
+                    if clientId in room.messages[index][2]:
+                        room.messages[index][2].remove(clientId)
+                room.messages[:] = [m for m in room.messages if m[2]]
+                room.clients.remove(clientId)
+                if (len(room.clients) > 0):
+                    discMessage = "{0} was disconnected".format(clientName)
+                    room.messages.append([clientName, discMessage, set(room.clients)])
+                self.pool.lockState.release()
+
+            self.myRooms = []
+            return True
 
     def readMessages(self):
         self.pool.lockState.acquire()
@@ -256,7 +283,8 @@ class Worker(Thread):
                     print "Thread {0} received data {1}".format(self.id, data.rstrip())
                     if data == "":
                         break
-                    self.handleResponse(data)
+                    if self.handleResponse(data):
+                        break
                 except socket.error as e2:
                     if e2.errno == errno.ECONNRESET:
                         break
