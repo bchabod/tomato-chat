@@ -5,9 +5,9 @@ if (len(sys.argv) < 2):
     print "Server usage: python server.py PORT"
     sys.exit(0)
 
-MIN_THREADS = 5 # Minimum number of workers at start and at any point
+MIN_THREADS = 2 # Minimum number of workers at start and at any point
 MAX_THREADS = 32 # Maximum number of workers
-TOLERANCE = 4 # Minimum difference before resizing the pool, to prevent constant resizing (inertia)
+TOLERANCE = 2 # Minimum difference before reducing the pool or minimum step for increasing (inertia)
 
 J_MSG = "JOIN_CHATROOM: "
 L_MSG = "LEAVE_CHATROOM: "
@@ -61,29 +61,31 @@ class Pool():
             return True
         return False
 
+    def requestResize(self):
+        self.lockClients.acquire()
+        activeWorkers = len([w for w in self.workers if w.conn])
+        difference = len(self.clients) + activeWorkers - len(self.workers)
+        if difference > 0 and len(self.workers) < MAX_THREADS:
+            nbThreads = min(max(difference, TOLERANCE), MAX_THREADS-len(self.workers))
+            print "Spawning {0} workers to handle more clients!".format(nbThreads)
+            for counter in range(nbThreads):
+                self.workers.append(Worker(self, self.threadCounter))
+                self.workers[-1].start()
+                self.threadCounter += 1
+        elif abs(difference) >= TOLERANCE and len(self.workers) > MIN_THREADS:
+            nbKills = min(abs(difference), len(self.workers)-MIN_THREADS)
+            print "Killing {0} workers because activity dropped!".format(nbKills)
+            self.maxKill = abs(difference)
+            self.killedSoFar = 0
+            self.workers = [w for w in self.workers if not self.killWorker(w)]
+        self.lockClients.release()
+
     def assignClient(self, conn):
         conn.setblocking(0)
         self.lockClients.acquire()
         self.clients.append(conn)
-
-        # Maybe our workers pool needs to be resized, and we need the lock to do so
-        difference = len(self.clients) - len(self.workers)
-        if abs(difference) > TOLERANCE:
-            if difference > 0:
-                # Spawn workers
-                for counter in range(difference):
-                    if len(self.workers) >= MAX_THREADS:
-                        break
-                    self.workers.append(Worker(self, self.threadCounter))
-                    self.workers[-1].start()
-                    self.threadCounter += 1
-            else:
-                # Kill workers
-                self.maxKill = abs(difference)
-                self.killedSoFar = 0
-                self.workers = [w for w in self.workers if not self.killWorker(w)]
-
         self.lockClients.release()
+        self.requestResize()
 
     def kill(self):
         self.killRequested = True
@@ -99,7 +101,7 @@ class Server(Thread):
 
     def run(self):
         while True:
-            # At most 5 queued clients
+            # At most 5 queued clients on most OS
             self.server.listen(5)
             (conn, (ip,port)) = self.server.accept()
             # If the server is already overloaded, reject this client
@@ -302,6 +304,9 @@ class Worker(Thread):
             print "Thread {0} closing client socket".format(self.id)
             self.conn.close()
             self.conn = None
+
+            # Maybe the pool needs to be resized
+            self.pool.requestResize()
 
         print "Thread {0} dying".format(self.id)
 
